@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Secure Encryptor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #1e1e2f;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+    }
+    h1 {
+      color: #00ffc8;
+    }
+    textarea, input {
+      width: 100%;
+      max-width: 500px;
+      margin: 10px 0;
+      padding: 10px;
+      background: #2e2e3e;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      border: none;
+      background: #00ffc8;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    .output {
+      margin-top: 20px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 AES Encryptor</h1>
+  <textarea id="inputText" rows="5" placeholder="Enter text to encrypt/decrypt"></textarea>
+  <input type="password" id="password" placeholder="Enter password">
+  <button onclick="encryptText()">Encrypt</button>
+  <button onclick="decryptText()">Decrypt</button>
+  <button onclick="downloadFile()">Download</button>
+  <div class="output">
+    <h3>Output:</h3>
+    <textarea id="outputText" rows="5" readonly></textarea>
+  </div>
+  <script>
+    // Your existing JavaScript functions (getKeyFromPassword, encryptText, decryptText) go here
+    async function getKeyFromPassword(password, salt) {
+      const enc = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        "raw", enc.encode(password), {name: "PBKDF2"}, false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        {
+          name: "PBKDF2",
+          salt: salt,
+          iterations: 100000,
+          hash: "SHA-256"
+        },
+        keyMaterial,
+        {name: "AES-GCM", length: 256},
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptText() {
+      const input = document.getElementById('inputText').value;
+      const password = document.getElementById('password').value;
+      if (!input || !password) return alert("Enter text and password!");
+
+      const enc = new TextEncoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await getKeyFromPassword(password, salt);
+      const ciphertext = await crypto.subtle.encrypt(
+        {name: "AES-GCM", iv: iv},
+        key,
+        enc.encode(input)
+      );
+
+      const combined = new Uint8Array([...salt, ...iv, ...new Uint8Array(ciphertext)]);
+      const base64 = btoa(String.fromCharCode(...combined));
+      document.getElementById('outputText').value = base64;
+    }
+
+    async function decryptText() {
+      const data = document.getElementById('inputText').value;
+      const password = document.getElementById('password').value;
+      if (!data || !password) return alert("Enter encrypted data and password!");
+
+      try {
+        const binary = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+        const salt = binary.slice(0, 16);
+        const iv = binary.slice(16, 28);
+        const ciphertext = binary.slice(28);
+
+        const key = await getKeyFromPassword(password, salt);
+        const decrypted = await crypto.subtle.decrypt(
+          {name: "AES-GCM", iv: iv},
+          key,
+          ciphertext
+        );
+        const dec = new TextDecoder();
+        document.getElementById('outputText').value = dec.decode(decrypted);
+      } catch (e) {
+        alert("Decryption failed. Incorrect password or data.");
+      }
+    }
+    function downloadFile() {
+      const outputText = document.getElementById('outputText').value;
+      if (!outputText) return alert("No output to download!");
+
+      const blob = new Blob([outputText], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'encrypted_data.txt'; // Customize the filename as needed
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

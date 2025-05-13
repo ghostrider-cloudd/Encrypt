@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Image Encryptor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #1e1e2f;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+    }
+    h1 {
+      color: #00ffc8;
+    }
+    input, button {
+      margin: 10px 0;
+      padding: 10px;
+      width: 100%;
+      max-width: 500px;
+      background: #2e2e3e;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+    }
+    button {
+      background: #00ffc8;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    textarea {
+      width: 100%;
+      max-width: 500px;
+      height: 120px;
+      margin: 10px 0;
+      background: #2e2e3e;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 10px;
+    }
+    img {
+      margin-top: 20px;
+      max-width: 300px;
+      border: 2px solid #00ffc8;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🖼️ Image Encryptor</h1>
+
+  <input type="file" id="imageInput" accept="image/*">
+  <input type="password" id="imgPassword" placeholder="Enter password">
+  <button onclick="encryptImage()">Encrypt Image</button>
+  <button onclick="decryptImage()">Decrypt Image</button>
+
+  <textarea id="imageOutput" placeholder="Encrypted Base64 will appear here..."></textarea>
+
+  <h3>🔓 Decrypted Image Preview:</h3>
+  <img id="decryptedImg" src="" alt="Decrypted image will show here" />
+
+  <script>
+    async function getKey(password, salt) {
+      const enc = new TextEncoder();
+      const keyMaterial = await crypto.subtle.importKey(
+        "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        {
+          name: "PBKDF2",
+          salt: salt,
+          iterations: 100000,
+          hash: "SHA-256"
+        },
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptImage() {
+      const file = document.getElementById('imageInput').files[0];
+      const password = document.getElementById('imgPassword').value;
+      if (!file || !password) return alert("Select an image and enter a password.");
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const arrayBuffer = reader.result;
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await getKey(password, salt);
+        const encrypted = await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv: iv },
+          key,
+          arrayBuffer
+        );
+
+        const combined = new Uint8Array([...salt, ...iv, ...new Uint8Array(encrypted)]);
+        const base64 = btoa(String.fromCharCode(...combined));
+        document.getElementById('imageOutput').value = base64;
+        document.getElementById('decryptedImg').src = '';
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    async function decryptImage() {
+      const base64 = document.getElementById('imageOutput').value;
+      const password = document.getElementById('imgPassword').value;
+      if (!base64 || !password) return alert("Enter encrypted data and password.");
+
+      try {
+        const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const salt = binary.slice(0, 16);
+        const iv = binary.slice(16, 28);
+        const data = binary.slice(28);
+
+        const key = await getKey(password, salt);
+        const decrypted = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: iv },
+          key,
+          data
+        );
+
+        const blob = new Blob([decrypted]);
+        const url = URL.createObjectURL(blob);
+        document.getElementById('decryptedImg').src = url;
+      } catch (e) {
+        alert("Decryption failed. Invalid password or data.");
+        console.error(e);
+      }
+    }
+  </script>
+</body>
+</html>
